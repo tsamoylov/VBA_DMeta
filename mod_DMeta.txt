@@ -1,0 +1,697 @@
+Option Compare Database
+Option Explicit
+
+Dim primary As String 'This is the primary output string
+Dim secondary As String 'This is the secondary output string, which is useful when there are multiple valid pronunciations of the same word
+Dim MainString As String 'This will get populated with the input string
+
+Public Function SlavoGermanic() As Boolean
+    'Checks the input string for some key characteristicss of Slavo-Germanic names and words
+    SlavoGermanic = ((InStr(1, MainString, "W", 1) Or InStr(1, MainString, "K", 1) Or InStr(1, MainString, "CZ", 1) Or InStr(1, MainString, "WITZ", 1)) > 0)
+End Function
+
+Public Sub MetaphAdd(mainChar As String, Optional altChar As Variant = "")
+    'Wrapper function for concatenating the metaphone-encoded character to the end of the two working strings: the main and alternate
+    'If no alternate character is found, the alternate receives the same letter as the main string.
+    'The working string is what is returned at the end of the main Metaphone() function.
+    If (StrComp(altChar, "", 1) <> 0) Then
+        primary = primary & mainChar
+        secondary = secondary & altChar
+    Else
+        primary = primary & mainChar
+        secondary = secondary & mainChar
+    End If
+End Sub
+
+Public Function GetAt(index As Long)
+'This function returns the letter at a given index
+'IMPORTANT: Note that this uses ZERO-BASED indexing, however it can also do relative indexing eg current - 1 or last - 3 etc
+'Most of the checking done using GetAt is done in tandem with StrComp to prevent extraneous cases where the = comparison operator doesn't return the correct result when comparing strings
+    If (index < 0) Then
+        GetAt = ""
+        GoTo Function_End
+    End If
+    If (index >= (Len(MainString) - 1)) Then
+    index = Len(MainString) - 1
+    End If
+    GetAt = Left(Mid(MainString, index + 1), 1)
+Function_End:
+End Function
+
+Public Function IsVowel(index As Long) As Boolean
+'Returns if the letter at a given index is a vowel
+
+    Dim letter As String
+    letter = GetAt(index)
+    If (InStr(1, "aieou", letter, 1) > 0) Then
+        IsVowel = True
+    Else
+     IsVowel = False
+    End If
+    
+End Function
+
+Public Function MetaInStr(startIndex As Long, length As Long, ParamArray strings() As Variant) As Boolean
+    'Every argument in the variable-length argument list is checked against a substring of equal length taken from the main string being processed
+    'For example, if the current letter is "J" and you want to check if it belongs to the word "JOSE" you can do MetaInStr(current, 4, "JOSE") where 4 is the length of the substring you want to compare against the strings in the ParamArray
+    If (startIndex < 0) Then
+        GoTo Function_End
+    End If
+    Dim i As Long
+    For i = 0 To UBound(strings())
+        Dim tempSubstring As String
+        'ZERO-BASED!
+        tempSubstring = Mid(MainString, startIndex + 1, length)
+        Dim dwCompareResult As Long
+        dwCompareResult = StrComp(tempSubstring, UCase(strings(i)), vbTextCompare)
+        If dwCompareResult = 0 Then
+            MetaInStr = True 'No need to check if multiple are true - If even one of the arguments is the same then we can return
+            Exit Function
+        End If
+    Next i
+    
+    MetaInStr = False 'If all args are checked and we return nothing, then the function ends here
+Function_End:
+    End Function
+
+
+
+Public Function Metaphone(InputString As String, Optional alt As Variant = False)
+    'Input should always be uppercase
+    MainString = UCase(InputString)
+    
+    'Clearing out the global variables so the func doesn't hang on to data
+    primary = ""
+    secondary = ""
+    
+    Dim current As Long 'Tracker for the letter that is currently being converted
+    current = 0
+    
+    Dim last As Long 'Index of the last letter in the word - useful for combining cases
+    last = Len(MainString) - 1
+    
+    Dim length As Long
+    length = Len(MainString)
+    
+    MainString = MainString & "     " 'Just to prevent errors when trying to index past the last letter
+    
+    '============HEY! READ ME!==============
+    'Most of what is written in the Select Case statement as well as some of the preamble is ALL documented in the original dmetaph.cpp
+    'Because of this, documentation for the remainder of this function will (mostly) not be present.
+    'If you for whichever reason cannot understand the code written here, the original double metaphone documentation can be found linked in the wikipedia page for metaphone:
+    'https://en.wikipedia.org/wiki/Metaphone
+    
+    
+    If (MetaInStr(0, 2, "GN", "KN", "PN", "WR", "PS")) Then
+        current = current + 1
+    End If
+    
+    If (StrComp(GetAt(0), "X") = 0) Then
+        MetaphAdd ("S")
+        current = current + 1
+    End If
+    
+    Dim running As Boolean
+    running = True
+    
+    While (running = True)
+        'For Debugging
+    
+        'Debug.Print "MainString Character: " & Mid(MainString, 1, current) & ">" & Mid(MainString, current + 1, 1) & "<"
+        'Debug.Print "Primary: " & primary
+        'Debug.Print "Secondary: " & secondary
+
+        If (current >= length) Then
+            running = False
+            GoTo Exit_While
+        End If
+        
+        Select Case GetAt(current)
+        
+        Case "A", "I", "E", "O", "U"
+            If (current = 0) Then
+                MetaphAdd ("A")
+            End If
+            current = current + 1
+            GoTo Exit_Select
+        Case "B"
+            MetaphAdd ("P")
+            If (StrComp(GetAt(current + 1), "B", 1)) Then
+                current = current + 2
+            Else
+                current = current + 1
+            End If
+            GoTo Exit_Select
+        Case "Ç"
+            MetaphAdd ("S")
+            current = current + 1
+            GoTo Exit_Select
+        Case "C"
+            If (current > 1) And (Not IsVowel(current - 2)) And MetaInStr((current - 1), 3, "ACH") And ((StrComp(GetAt(current + 2), "I", 1) <> 0) And ((StrComp(GetAt(current + 2), "E", 1) <> 0) Or (MetaInStr(current - 2, 6, "BACHER", "MACHER")))) Then
+                MetaphAdd ("K")
+                current = current + 2
+                GoTo Exit_Select
+            End If
+            
+            If (current = 0 And MetaInStr(current, 6, "CAESAR")) Then
+                MetaphAdd ("S")
+                current = current + 2
+                GoTo Exit_Select
+            End If
+            
+            If (MetaInStr(current, 4, "CHIA")) Then
+                MetaphAdd ("K")
+                current = current + 2
+                GoTo Exit_Select
+            End If
+            
+            If ((current = 0) And (MetaInStr((current + 1), 5, "HARAC", "HARIS") Or MetaInStr((current + 1), 3, "HOR", "HYM", "HIA", "HEM")) And Not (MetaInStr(0, 5, "CHORE"))) Then
+                MetaphAdd ("K")
+                current = current + 2
+                GoTo Exit_Select
+            End If
+            
+            If (MetaInStr(current, 2, "CH")) Then
+                If (current > 0 And MetaInStr(current, 4, "CHAE")) Then
+                    MetaphAdd "K", "X"
+                    current = current + 2
+                    GoTo Exit_Select
+                End If
+                If ( _
+                    (MetaInStr(0, 4, "VAN ", "VON ") Or MetaInStr(0, 3, "SCH")) _
+                    Or _
+                    MetaInStr(current - 2, 6, "ORCHES", "ARCHIT", "ORCHID") _
+                    Or _
+                    MetaInStr(current + 2, 1, "T", "S") _
+                    Or ( _
+                        (MetaInStr(current - 1, 1, "A", "O", "U", "E") Or current = 0) _
+                        And _
+                        MetaInStr(current + 2, 1, "L", "R", "N", "M", "B", "H", "F", "V", "W", " ") _
+                    ) _
+                ) Then
+                    MetaphAdd ("K")
+                Else
+                    If (current > 0) Then
+                        If (MetaInStr(0, 2, "MC")) Then
+                            MetaphAdd ("K")
+                        Else
+                            MetaphAdd "X", "K"
+                        End If
+                    Else
+                        MetaphAdd ("X")
+                    End If
+                End If
+                current = current + 2
+                GoTo Exit_Select
+            End If
+            
+            If (MetaInStr(current, 2, "CZ") And Not (MetaInStr((current - 2), 4, "WICZ"))) Then
+                MetaphAdd "S", "X"
+                current = current + 2
+                GoTo Exit_Select
+            End If
+            
+            If (MetaInStr((current + 1), 3, "CIA")) Then
+                MetaphAdd ("X")
+                current = current + 3
+                GoTo Exit_Select
+            End If
+            
+            If (MetaInStr(current, 2, "CC") And Not ((current = 1) And (StrComp(GetAt(0), "M", 1) = 0))) Then
+                If (MetaInStr((current + 2), 1, "I", "E", "H") And Not (MetaInStr((current + 2), 2, "HU"))) Then
+                    If ((current = 1 And (StrComp(GetAt(current - 1), "A", 1) = 0)) Or MetaInStr((current - 1), 5, "UCCEE", "UCCES")) Then
+                        MetaphAdd ("KS")
+                    Else
+                        MetaphAdd ("X")
+                    End If
+                    current = current + 3
+                    GoTo Exit_Select
+                Else
+                    MetaphAdd ("K")
+                    current = current + 2
+                    GoTo Exit_Select
+                End If
+                
+            End If
+            
+            If (MetaInStr(current, 2, "CK", "CG", "CQ")) Then
+                MetaphAdd ("K")
+                current = current + 2
+                GoTo Exit_Select
+            End If
+            
+            If (MetaInStr(current, 2, "CI", "CE", "CY")) Then
+                If (MetaInStr(current, 3, "CIO", "CIE", "CIA")) Then
+                    MetaphAdd "S", "X"
+                Else
+                    MetaphAdd ("S")
+                End If
+                current = current + 2
+                GoTo Exit_Select
+            End If
+            
+            MetaphAdd ("K")
+            
+            If (MetaInStr((current + 1), 2, " C", " Q", " G")) Then
+                current = current + 3
+            Else
+                If (MetaInStr((current + 1), 1, "C", "K", "Q") And Not MetaInStr((current + 1), 2, "CE", "CI")) Then
+                    current = current + 2
+                Else
+                    current = current + 1
+                End If
+            End If
+            GoTo Exit_Select
+        Case "D"
+            If (MetaInStr(current, 2, "DG")) Then
+                If (MetaInStr((current + 2), 1, "I", "E", "Y")) Then
+                    MetaphAdd ("J")
+                    current = current + 3
+                    GoTo Exit_Select
+                Else
+                    MetaphAdd ("TK")
+                    current = current + 2
+                    GoTo Exit_Select
+                End If
+            End If
+            If (MetaInStr(current, 2, "DT", "DD")) Then
+                MetaphAdd ("T")
+                current = current + 2
+                GoTo Exit_Select
+            End If
+            MetaphAdd ("T")
+            current = current + 1
+            GoTo Exit_Select
+        Case "F"
+            If (StrComp(GetAt(current + 1), "F", 1) = 0) Then
+                current = current + 2
+            Else
+                current = current + 1
+            End If
+            MetaphAdd ("F")
+            GoTo Exit_Select
+        Case "G"
+            If (StrComp(GetAt(current + 1), "H", 1) = 0) Then
+                If ((current > 0) And Not IsVowel(current - 1)) Then
+                    MetaphAdd ("K")
+                    current = current + 2
+                    GoTo Exit_Select
+                End If
+                If (current < 3) Then
+                    If (current = 0) Then
+                        If (StrComp(GetAt(current + 2), "I", 1) = 0) Then
+                            MetaphAdd ("J")
+                        Else
+                            MetaphAdd ("K")
+                        End If
+                        current = current + 2
+                        GoTo Exit_Select
+                    End If
+                End If
+                
+                If (((current > 1) And MetaInStr((current - 2), 1, "B", "H", "D")) _
+                Or ((current > 2) And MetaInStr((current - 3), 1, "B", "H", "D")) _
+                Or ((current > 3) And MetaInStr((current - 4), 1, "B", "H"))) Then
+                    current = current + 2
+                    GoTo Exit_Select
+                Else
+                    If ((current > 2) And (StrComp(GetAt(current - 1), "U", 1) = 0 And MetaInStr((current - 3), 1, "C", "G", "L", "R", "T"))) Then
+                        MetaphAdd ("F")
+                    Else
+                        If ((current > 0) And (StrComp(GetAt(current - 1), "I", 1) <> 0)) Then
+                            MetaphAdd ("K")
+                        End If
+                    End If
+                    current = current + 2
+                    GoTo Exit_Select
+                End If
+                
+                
+            End If
+            
+            If (StrComp(GetAt(current + 1), "N", 1) = 0) Then
+                If ((current = 1) And IsVowel(0) And Not SlavoGermanic()) Then
+                    MetaphAdd "KN", "N"
+                Else
+                    If (Not MetaInStr((current + 2), 2, "EY") And (StrComp(GetAt(current + 1), "Y", 1) <> 0) And Not SlavoGermanic()) Then
+                        MetaphAdd "N", "KN"
+                    Else
+                        MetaphAdd "KN"
+                    End If
+                End If
+                current = current + 2
+                GoTo Exit_Select
+            End If
+            If (MetaInStr((current + 1), 2, "LI") And SlavoGermanic()) Then
+                MetaphAdd "KL", "L"
+                current = current + 2
+                GoTo Exit_Select
+            End If
+            If ((current = 0) And (((StrComp(GetAt(current + 1), "Y", 1) = 0) Or MetaInStr((current + 1), 2, "ES", "EP", "EB", "EL", "EY", "IB", "IL", "IN", "IE", "EI", "ER")))) Then
+                MetaphAdd "K", "J"
+                current = current + 2
+                GoTo Exit_Select
+            End If
+            
+            If (((MetaInStr((current + 1), 2, "ER")) Or ((StrComp(GetAt(current + 1), "Y", 1) = 0))) And Not (MetaInStr(0, 6, "DANGER", "MANGER", "RANGER")) And Not (MetaInStr((current - 1), 1, "E", "I")) And Not (MetaInStr((current - 1), 3, "RGY", "OGY"))) Then
+                MetaphAdd "K", "J"
+                current = current + 2
+                GoTo Exit_Select
+            End If
+            
+            
+            If (MetaInStr((current + 1), 1, "E", "I", "Y") Or MetaInStr((current - 1), 4, "AGGI", "OGGI")) Then
+                If ((MetaInStr(0, 4, "VAN ", "VON ") Or MetaInStr(0, 3, "SCH")) Or MetaInStr((current + 1), 2, "ET")) Then
+                    MetaphAdd ("K")
+                Else
+                    If (MetaInStr((current + 1), 4, "IER ")) Then
+                        MetaphAdd ("J")
+                    Else
+                        MetaphAdd "J", "K"
+                    End If
+                End If
+                current = current + 2
+                GoTo Exit_Select
+            End If
+            
+            If (StrComp(GetAt(current + 1), "G", 1) = 0) Then
+                current = current + 2
+            Else
+                current = current + 1
+            End If
+            MetaphAdd ("K")
+            GoTo Exit_Select
+            
+        Case "H"
+            If (((current = 0) Or (IsVowel(current - 1))) And IsVowel(current + 1)) Then
+                MetaphAdd ("H")
+                current = current + 2
+            Else
+                current = current + 1
+            End If
+            
+            GoTo Exit_Select
+        Case "J"
+            If (MetaInStr(current, 4, "JOSE") Or MetaInStr(0, 4, "SAN ")) Then
+                If (((current = 0) And (StrComp(GetAt(current + 4), " ", 1) = 0)) Or MetaInStr(0, 4, "SAN ")) Then
+                    MetaphAdd ("H")
+                Else
+                    MetaphAdd "J", "H"
+                End If
+                current = current + 1
+                GoTo Exit_Select
+            End If
+            If (current = 0 And Not MetaInStr(current, 4, "JOSE")) Then
+                MetaphAdd "J", "A"
+            Else
+                If (IsVowel(current - 1) And Not SlavoGermanic() And ((StrComp(GetAt(current + 1), "A", 1) = 0) Or (StrComp(GetAt(current + 1), "O", 1) = 0))) Then
+                    MetaphAdd "J", "H"
+                Else
+                    If (current = last) Then
+                        MetaphAdd "J", " "
+                    Else
+                        If (MetaInStr((current + 1), 1, "L", "T", "K", "S", "N", "M", "B", "Z") And Not MetaInStr((current - 1), 1, "S", "K", "L")) Then
+                            MetaphAdd ("J")
+                        End If
+                    End If
+                End If
+            End If
+            If (StrComp(GetAt(current + 1), "J", 1) = 0) Then
+                current = current + 2
+            Else
+                current = current + 1
+            End If
+            GoTo Exit_Select
+        Case "K"
+            If (StrComp(GetAt(current + 1), "K", 1) = 0) Then
+                current = current + 2
+            Else
+                current = current + 1
+            End If
+            MetaphAdd ("K")
+            GoTo Exit_Select
+        Case "L"
+            If (StrComp(GetAt(current + 1), "L", 1) = 0) Then
+                If (((current = (length - 3)) And MetaInStr((current - 1), 4, "ILLO", "ILLA", "ALLE")) Or ((MetaInStr((last - 1), 2, "AS", "OS") Or MetaInStr((last), 1, "A", "O")) And MetaInStr((current - 1), 4, "ALLE"))) Then
+                    MetaphAdd "L", " "
+                    current = current + 2
+                    GoTo Exit_Select
+                End If
+                
+                current = current + 2
+            Else
+                current = current + 1
+            End If
+            MetaphAdd ("L")
+            GoTo Exit_Select
+        Case "M"
+            If ((MetaInStr((current - 1), 3, "UMB") And ((current + 1 = last) Or MetaInStr((current + 2), 2, "ER"))) Or (StrComp(GetAt(current + 1), "M", 1) = 0)) Then
+                current = current + 2
+            Else
+                current = current + 1
+            End If
+            MetaphAdd ("M")
+            GoTo Exit_Select
+        Case "N"
+            If (StrComp(GetAt(current + 1), "N", 1) = 0) Then
+                current = current + 2
+            Else
+                current = current + 1
+            End If
+            MetaphAdd ("N")
+            GoTo Exit_Select
+        Case "Ñ"
+            current = current + 1
+            MetaphAdd ("N")
+            GoTo Exit_Select
+        Case "P"
+            If (StrComp(GetAt(current + 1), "H", 1) = 0) Then
+                MetaphAdd ("F")
+                current = current + 2
+                GoTo Exit_Select
+            End If
+            
+            If (MetaInStr((current + 1), 1, "P", "B")) Then
+                current = current + 2
+            Else
+                current = current + 1
+                MetaphAdd ("P")
+            End If
+            GoTo Exit_Select
+        Case "Q"
+            If (StrComp(GetAt(current + 1), "Q", 1) = 0) Then
+                current = current + 2
+            Else
+                current = current + 1
+            End If
+            MetaphAdd ("K")
+            GoTo Exit_Select
+        Case "R"
+            If ((current = last) And Not SlavoGermanic() And MetaInStr((current - 2), 2, "IE") And Not MetaInStr((current - 4), 2, "ME", "MA")) Then
+                MetaphAdd "", "R"
+            Else
+                MetaphAdd ("R")
+            End If
+            
+            If (StrComp(GetAt(current + 1), "R", 1) = 0) Then
+                current = current + 2
+            Else
+                current = current + 1
+            End If
+            GoTo Exit_Select
+        Case "S"
+            If (MetaInStr((current - 1), 3, "ISL", "YSL")) Then
+                current = current + 1
+                GoTo Exit_Select
+            End If
+            
+            If ((current = 0) And MetaInStr(current, 5, "SUGAR")) Then
+                MetaphAdd "X", "S"
+                current = current + 1
+                GoTo Exit_Select
+            End If
+            
+            If (MetaInStr(current, 2, "SH")) Then
+                If (MetaInStr((current + 1), 4, "HEIM", "HOEK", "HOLM", "HOLZ")) Then
+                    MetaphAdd ("S")
+                Else
+                    MetaphAdd ("X")
+                End If
+                current = current + 2
+                GoTo Exit_Select
+            End If
+            
+            If (MetaInStr(current, 3, "SIO", "SIA") Or MetaInStr(current, 4, "SIAN")) Then
+                If (Not SlavoGermanic()) Then
+                    MetaphAdd "S", "X"
+                Else
+                    MetaphAdd ("S")
+                End If
+                current = current + 3
+                GoTo Exit_Select
+            End If
+            
+            If (((current = 0) And MetaInStr((current + 1), 1, "M", "N", "L", "W")) Or MetaInStr((current + 1), 1, "Z")) Then
+                MetaphAdd "S", "X"
+                If (MetaInStr((current + 1), 1, "Z")) Then
+                    current = current + 2
+                Else
+                    current = current + 1
+                End If
+                GoTo Exit_Select
+            End If
+            
+            If (MetaInStr(current, 2, "SC")) Then
+                If (StrComp(GetAt(current + 2), "H", 1) = 0) Then
+                    If (MetaInStr((current + 3), 2, "OO", "ER", "EN", "UY", "ED", "EM")) Then
+                        If (MetaInStr((current + 3), 2, "ER", "EN")) Then
+                            MetaphAdd "X", "SK"
+                        Else
+                            MetaphAdd ("SK")
+                        End If
+                        current = current + 3
+                        GoTo Exit_Select
+                    Else
+                        If ((current = 0) And Not IsVowel(3) And (StrComp(GetAt(3), "W", 1) = 0)) Then
+                            MetaphAdd "X", "S"
+                        Else
+                            MetaphAdd ("X")
+                        End If
+                        current = current + 3
+                        GoTo Exit_Select
+                    End If
+                End If
+                
+                If (MetaInStr((current + 1), 1, "I", "E", "Y")) Then
+                    MetaphAdd ("S")
+                    current = current + 3
+                    GoTo Exit_Select
+                End If
+                
+                MetaphAdd ("SK")
+                current = current + 3
+                GoTo Exit_Select
+            End If
+            
+            If ((current = last) And MetaInStr((current - 2), 2, "AI", "OI")) Then
+                MetaphAdd "", "S"
+            Else
+                MetaphAdd ("S")
+            End If
+            
+            If (MetaInStr((current + 1), 1, "S", "Z")) Then
+                current = current + 2
+            Else
+                current = current + 1
+            End If
+            GoTo Exit_Select
+        Case "T"
+            If (MetaInStr(current, 4, "TION")) Then
+                MetaphAdd ("X")
+                current = current + 3
+                GoTo Exit_Select
+            End If
+            
+            If (MetaInStr(current, 3, "TIZ", "TCH")) Then
+                MetaphAdd ("X")
+                current = current + 3
+                GoTo Exit_Select
+            End If
+            
+            If (MetaInStr(current, 2, "TH") Or MetaInStr(current, 3, "TTH")) Then
+                If (MetaInStr((current + 2), 2, "OM", "AM") Or MetaInStr(0, 4, "VAN ", "VON ") Or MetaInStr(0, 3, "SCH")) Then
+                    MetaphAdd ("T")
+                Else
+                    MetaphAdd "0", "T"
+                End If
+                current = current + 2
+                GoTo Exit_Select
+            End If
+            
+            If (MetaInStr((current + 1), 1, "T", "D")) Then
+                current = current + 2
+            Else
+                current = current + 1
+            End If
+            MetaphAdd ("T")
+            GoTo Exit_Select
+        Case "V"
+            If (StrComp(GetAt(current + 1), "V", 1) = 0) Then
+                current = current + 2
+            Else
+                current = current + 1
+            End If
+            MetaphAdd ("F")
+            GoTo Exit_Select
+        Case "W"
+            If (MetaInStr(current, 2, "WR")) Then
+                MetaphAdd ("R")
+                current = current + 2
+                GoTo Exit_Select
+            End If
+            
+            If ((current = 0) And (IsVowel(current + 1) Or MetaInStr(current, 2, "WH"))) Then
+                If (IsVowel(current + 1)) Then
+                    MetaphAdd "A", "F"
+                Else
+                    MetaphAdd ("A")
+                End If
+            End If
+            
+            If (((current = last) And IsVowel(current - 1)) Or MetaInStr(current - 1, 5, "EWSKI", "EWSKY", "OWSKI", "OWSKY") Or MetaInStr(0, 3, "SCH")) Then
+                MetaphAdd "", "F"
+                current = current + 1
+                GoTo Exit_Select
+            End If
+            
+            If (MetaInStr(current, 4, "WICZ", "WITZ")) Then
+                MetaphAdd "TS", "FX"
+                current = current + 4
+                GoTo Exit_Select
+            End If
+            current = current + 1
+            GoTo Exit_Select
+        Case "X"
+            If (Not ((current = last) And (MetaInStr((current - 3), 3, "IAU", "EAU") Or MetaInStr((current - 2), 2, "AU", "OU")))) Then
+                MetaphAdd ("KS")
+            End If
+            
+            If (MetaInStr((current + 1), 1, "C", "X")) Then
+                current = current + 2
+            Else
+                current = current + 1
+            End If
+            GoTo Exit_Select
+        Case "Z"
+            If (StrComp(GetAt(current + 1), "H", 1) = 0) Then
+                MetaphAdd ("J")
+                current = current + 2
+                GoTo Exit_Select
+            Else
+                If (MetaInStr(current + 1, 2, "ZO", "ZI", "ZA") Or (SlavoGermanic() And ((current > 0) And (StrComp(GetAt(current - 1), "T", 1) <> 0)))) Then
+                    MetaphAdd "S", "TS"
+                Else
+                    MetaphAdd ("S")
+                End If
+            End If
+            If (StrComp(GetAt(current + 1), "Z", 1) = 0) Then
+                current = current + 2
+            Else
+                current = current + 1
+            End If
+            GoTo Exit_Select
+        Case Else
+            current = current + 1
+            GoTo Exit_Select
+        
+Exit_Select:
+        End Select
+Exit_While:
+    Wend
+    
+    If (alt = True) Then
+        Metaphone = secondary
+    Else
+        Metaphone = primary
+    End If
+End Function
